@@ -19,6 +19,7 @@
  * USA
  */
 
+#include <sys/stat.h>
 #include <gsf-config.h>
 #include <gsf/gsf-input.h>
 #include <gsf/gsf.h>
