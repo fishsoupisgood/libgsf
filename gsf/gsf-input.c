@@ -35,6 +35,7 @@
  * an attribute.
  */
 #define MODTIME_ATTR "GsfInput::modtime"
+#define CREATIME_ATTR "GsfInput::creatime"
 
 
 
@@ -50,6 +51,7 @@ enum {
 	PROP_REMAINING,
 	PROP_POS,
 	PROP_MODTIME,
+	PROP_CREATIME,
 	PROP_CONTAINER
 };
 
@@ -82,6 +84,9 @@ gsf_input_get_property (GObject     *object,
 	case PROP_MODTIME:
 		g_value_set_boxed (value, gsf_input_get_modtime (input));
 		break;
+	case PROP_CREATIME:
+		g_value_set_boxed (value, gsf_input_get_creatime (input));
+		break;
 	case PROP_CONTAINER:
 		g_value_set_object (value, input->container);
 		break;
@@ -99,6 +104,7 @@ gsf_input_dispose (GObject *obj)
 	gsf_input_set_container (input, NULL);
 	gsf_input_set_name (input, NULL);
 	gsf_input_set_modtime (input, NULL);
+	gsf_input_set_creatime (input, NULL);
 
 	parent_class->dispose (obj);
 }
@@ -206,6 +212,24 @@ gsf_input_class_init (GObjectClass *gobject_class)
 		 ("modtime",
 		  _("Modification time"),
 		  _("An optional GDateTime representing the time the input was last changed"),
+		  G_TYPE_DATE_TIME,
+		  GSF_PARAM_STATIC |
+		  G_PARAM_READABLE));
+
+	/**
+	 * GsfInput:creatime:
+	 *
+	 * The time the input was last updated.  This represents the
+	 * timestamp from the originating file or @GsfInfile member.
+	 * It is not supported by all derived classes.
+	 */
+	g_object_class_install_property
+		(gobject_class,
+		 PROP_CREATIME,
+		 g_param_spec_boxed
+		 ("creatime",
+		  _("Creation time"),
+		  _("An optional GDateTime representing the time the input was created"),
 		  G_TYPE_DATE_TIME,
 		  GSF_PARAM_STATIC |
 		  G_PARAM_READABLE));
@@ -651,6 +675,74 @@ gsf_input_set_modtime_from_stat (GsfInput *input,
 	modtime = g_date_time_new_from_timeval_utc (&tv);
 	res = gsf_input_set_modtime (GSF_INPUT (input), modtime);
 	g_date_time_unref (modtime);
+
+	return res;
+}
+
+
+/**
+ * gsf_input_get_creatime:
+ * @input: the input stream
+ *
+ * Returns: (transfer none): A #GDateTime representing when the input
+ * was last modified, or %NULL if not known.
+ */
+GDateTime *
+gsf_input_get_creatime (GsfInput *input)
+{
+	g_return_val_if_fail (GSF_IS_INPUT (input), NULL);
+
+	return g_object_get_data (G_OBJECT (input), CREATIME_ATTR);
+}
+
+/**
+ * gsf_input_set_creatime:
+ * @input: the input stream
+ * @creatime: (transfer none) (allow-none): the new modification time.
+ *
+ * protected.
+ *
+ * Returns: %TRUE if the assignment was ok.
+ */
+gboolean
+gsf_input_set_creatime (GsfInput *input, GDateTime *creatime)
+{
+	g_return_val_if_fail (GSF_IS_INPUT (input), FALSE);
+
+	if (creatime)
+		creatime = g_date_time_add (creatime, 0); /* Copy */
+
+	/* This actually also works for null creatime.  */
+	g_object_set_data_full (G_OBJECT (input),
+				CREATIME_ATTR, creatime,
+				(GDestroyNotify)g_date_time_unref);
+
+	return TRUE;
+}
+
+gboolean
+gsf_input_set_creatime_from_stat (GsfInput *input,
+				 const struct stat *st)
+{
+	GDateTime *creatime;
+	GTimeVal tv;
+	gboolean res;
+
+	if (st->st_ctime == (time_t)-1)
+		return FALSE;
+
+	tv.tv_sec = st->st_ctime;
+#if defined (HAVE_STRUCT_STAT_ST_MTIMENSEC)
+	tv.tv_usec = st->st_ctimensec / 1000;
+#elif defined (HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC)
+	tv.tv_usec =  st->st_ctim.tv_nsec / 1000;
+#else
+	tv.tv_usec = 0;
+#endif
+
+	creatime = g_date_time_new_from_timeval_utc (&tv);
+	res = gsf_input_set_creatime (GSF_INPUT (input), creatime);
+	g_date_time_unref (creatime);
 
 	return res;
 }

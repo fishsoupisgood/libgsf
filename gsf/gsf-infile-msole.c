@@ -54,6 +54,7 @@ typedef struct {
 	GList	 *children;
 	unsigned char clsid[16];	/* 16 byte GUID used by some apps */
 	GDateTime *modtime;
+	GDateTime *creatime;
 } MSOleDirent;
 
 typedef struct {
@@ -304,7 +305,7 @@ ole_dirent_new (GsfInfileMSOle *ole, guint32 entry, MSOleDirent *parent,
 	guint8 const *data;
 	guint8 type;
 	guint16 name_len;
-	guint64 ft;
+	guint64 ft_ctime, ft_mtime;
 
 	if (entry >= DIRENT_MAGIC_END)
 		return NULL;
@@ -340,12 +341,14 @@ ole_dirent_new (GsfInfileMSOle *ole, guint32 entry, MSOleDirent *parent,
 	g_return_val_if_fail (type == DIRENT_TYPE_DIR || type == DIRENT_TYPE_ROOTDIR ||
 			      size <= (guint32)ole->input->size, NULL);
 
-	ft = GSF_LE_GET_GUINT64 (data + DIRENT_MODIFY_TIME);
+	ft_mtime = GSF_LE_GET_GUINT64 (data + DIRENT_MODIFY_TIME);
+	ft_ctime = GSF_LE_GET_GUINT64 (data + DIRENT_CREATE_TIME);
 
 	dirent = g_new0 (MSOleDirent, 1);
 	dirent->index	     = entry;
 	dirent->size	     = size;
-	dirent->modtime = datetime_from_filetime (ft);
+	dirent->modtime = datetime_from_filetime (ft_mtime);
+	dirent->creatime = datetime_from_filetime (ft_ctime);
 	/* Store the class id which is 16 byte identifier used by some apps */
 	memcpy(dirent->clsid, data + DIRENT_CLSID, sizeof(dirent->clsid));
 
@@ -423,6 +426,8 @@ ole_dirent_free (MSOleDirent *dirent)
 
 	if (dirent->modtime)
 		g_date_time_unref (dirent->modtime);
+	if (dirent->creatime)
+		g_date_time_unref (dirent->creatime);
 
 	g_free (dirent);
 }
@@ -659,6 +664,7 @@ ole_init_info (GsfInfileMSOle *ole, GError **err)
 	 * keep files from actually have a modtime there.
 	 */
 	gsf_input_set_modtime (GSF_INPUT (ole), ole->dirent->modtime);
+	gsf_input_set_creatime (GSF_INPUT (ole), ole->dirent->creatime);
 
 	return FALSE;
 }
@@ -790,6 +796,7 @@ gsf_infile_msole_new_child (GsfInfileMSOle *parent,
 	child->dirent = dirent;
 	gsf_input_set_size (GSF_INPUT (child), (gsf_off_t) dirent->size);
 	gsf_input_set_modtime (GSF_INPUT (child), dirent->modtime);
+	gsf_input_set_creatime (GSF_INPUT (child), dirent->creatime);
 
 	/* The root dirent defines the small block file */
 	if (dirent->index != 0) {
