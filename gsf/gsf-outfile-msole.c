@@ -399,6 +399,9 @@ gsf_outfile_msole_close_root (GsfOutfileMSOle *ole)
 			GSF_LE_SET_GUINT32 (buf + DIRENT_FIRSTBLOCK, child->first_block);
 			GSF_LE_SET_GUINT32 (buf + DIRENT_FILE_SIZE, size);
 		}
+		GSF_LE_SET_GUINT64 (buf + DIRENT_CREATE_TIME,
+				    datetime_to_filetime (gsf_output_get_creatime (GSF_OUTPUT (child))));
+
 		GSF_LE_SET_GUINT64 (buf + DIRENT_MODIFY_TIME,
 				    datetime_to_filetime (gsf_output_get_modtime (GSF_OUTPUT (child))));
 

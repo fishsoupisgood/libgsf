@@ -33,6 +33,7 @@
  * an attribute.
  */
 #define MODTIME_ATTR "GsfOutput::modtime"
+#define CREATIME_ATTR "GsfOutput::creatime"
 
 
 static gsf_off_t gsf_output_real_vprintf (GsfOutput *output,
@@ -49,6 +50,7 @@ enum {
 	PROP_CLOSED,
 	PROP_POS,
 	PROP_MODTIME,
+	PROP_CREATIME,
 	PROP_CONTAINER
 };
 
@@ -66,6 +68,9 @@ gsf_output_set_property (GObject      *object,
 		break;
 	case PROP_MODTIME:
 		gsf_output_set_modtime (output, g_value_get_boxed (value));
+		break;
+	case PROP_CREATIME:
+		gsf_output_set_creatime (output, g_value_get_boxed (value));
 		break;
 	case PROP_CONTAINER:
 		gsf_output_set_container (output, g_value_get_object (value));
@@ -102,6 +107,9 @@ gsf_output_get_property (GObject     *object,
 	case PROP_MODTIME:
 		g_value_set_boxed (value, gsf_output_get_modtime (output));
 		break;
+	case PROP_CREATIME:
+		g_value_set_boxed (value, gsf_output_get_creatime (output));
+		break;
 	case PROP_CONTAINER:
 		g_value_set_object (value, output->container);
 		break;
@@ -124,6 +132,7 @@ gsf_output_dispose (GObject *obj)
 	gsf_output_set_container (output, NULL);
 	gsf_output_set_name (output, NULL);
 	gsf_output_set_modtime (output, NULL);
+	gsf_output_set_creatime (output, NULL);
 
 	g_free (output->printf_buf);
 	output->printf_buf = NULL;
@@ -231,6 +240,26 @@ gsf_output_class_init (GObjectClass *gobject_class)
 		 ("modtime",
 		  _("Modification time"),
 		  _("An optional GDateTime representing the time the output was last changed"),
+		  G_TYPE_DATE_TIME,
+		  GSF_PARAM_STATIC |
+		  G_PARAM_CONSTRUCT_ONLY |
+		  G_PARAM_READWRITE));
+
+	/**
+	 * GsfOutput:creatime:
+	 *
+	 * The time the output was last updated.  This must be set on object
+	 * construction and represents the timestamp to put on the resulting
+	 * file or #GsfOutfile member.  Not all derived classes will actually
+	 * do anything with this property.
+	 */
+	g_object_class_install_property
+		(gobject_class,
+		 PROP_CREATIME,
+		 g_param_spec_boxed
+		 ("creatime",
+		  _("Creation time"),
+		  _("An optional GDateTime representing the time the output was created"),
 		  G_TYPE_DATE_TIME,
 		  GSF_PARAM_STATIC |
 		  G_PARAM_CONSTRUCT_ONLY |
@@ -654,6 +683,44 @@ gsf_output_set_modtime (GsfOutput *output, GDateTime *modtime)
 	/* This actually also works for null modtime.  */
 	g_object_set_data_full (G_OBJECT (output),
 				MODTIME_ATTR, modtime,
+				(GDestroyNotify)g_date_time_unref);
+
+	return TRUE;
+}
+
+/**
+ * gsf_output_get_creatime:
+ * @output: the output stream
+ *
+ * Returns: (transfer none) (nullable): A #GDateTime representing when
+ * the output was last modified
+ */
+GDateTime *
+gsf_output_get_creatime (GsfOutput *output)
+{
+	g_return_val_if_fail (GSF_IS_OUTPUT (output), NULL);
+
+	return g_object_get_data (G_OBJECT (output), CREATIME_ATTR);
+}
+
+/**
+ * gsf_output_set_creatime:
+ * @output: the output stream
+ * @creatime: (transfer none) (allow-none): the new modification time.
+ *
+ * Returns: %TRUE if the assignment was ok.
+ */
+gboolean
+gsf_output_set_creatime (GsfOutput *output, GDateTime *creatime)
+{
+	g_return_val_if_fail (GSF_IS_OUTPUT (output), FALSE);
+
+	if (creatime)
+		creatime = g_date_time_add (creatime, 0); /* Copy */
+
+	/* This actually also works for null creatime.  */
+	g_object_set_data_full (G_OBJECT (output),
+				CREATIME_ATTR, creatime,
 				(GDestroyNotify)g_date_time_unref);
 
 	return TRUE;

@@ -52,7 +52,8 @@ gsf_off_t     gsf_input_tell	  (GsfInput *input);
 gboolean      gsf_input_seek	  (GsfInput *input,
 				   gsf_off_t offset, GSeekType whence);
 
-GDateTime *   gsf_input_get_modtime (GsfInput *input);
+GDateTime *   gsf_input_get_modtime  (GsfInput *input);
+GDateTime *   gsf_input_get_creatime (GsfInput *input);
 
 /* Utilities */
 gboolean  gsf_input_copy       (GsfInput *input, GsfOutput *output);

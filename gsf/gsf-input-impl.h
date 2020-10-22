@@ -61,9 +61,12 @@ gboolean gsf_input_set_name_from_filename (GsfInput *input, char const *filename
 gboolean gsf_input_set_container (GsfInput *input, GsfInfile *container);
 gboolean gsf_input_set_size	 (GsfInput *input, gsf_off_t size);
 gboolean gsf_input_set_modtime   (GsfInput *input, GDateTime *modtime);
+gboolean gsf_input_set_creatime  (GsfInput *input, GDateTime *creatime);
 gboolean gsf_input_seek_emulate  (GsfInput *input, gsf_off_t pos);
 
 struct stat;
+gboolean gsf_input_set_creatime_from_stat (GsfInput *input,
+					  const struct stat *st);
 gboolean gsf_input_set_modtime_from_stat (GsfInput *input,
 					  const struct stat *st);
 
