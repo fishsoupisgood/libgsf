@@ -283,13 +283,16 @@ static guint64
 datetime_to_filetime (GDateTime *dt)
 {
 	static const guint64 epoch = G_GINT64_CONSTANT (11644473600);
-	GTimeVal tv;
+	guint64 sec, usec;
+
 	if (!dt)
 		return 0u;
 
 	/* ft is number of 100ns since Jan 1 1601 */
-	g_date_time_to_timeval (dt, &tv);
-	return (tv.tv_sec + epoch) * 10000000u + tv.tv_usec * 10u;
+	sec = g_date_time_to_unix(dt);
+	usec = g_date_time_get_microsecond(dt);
+
+	return (sec + epoch) * 10000000u + usec * 10u;
 }
 
 static void

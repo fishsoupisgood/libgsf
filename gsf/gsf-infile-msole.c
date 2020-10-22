@@ -282,15 +282,21 @@ static GDateTime *
 datetime_from_filetime (guint64 ft)
 {
 	static const guint64 epoch = G_GINT64_CONSTANT (11644473600);
-	GTimeVal tv;
+	GDateTime *dt, *ret;
+	guint64 usec, sec;
 	if (!ft)
 		return NULL;
 
 	/* ft is number of 100ns since Jan 1 1601 */
 
-	tv.tv_usec = (ft % 10000000u) / 10;
-	tv.tv_sec = (ft / 10000000u) - epoch;
-	return g_date_time_new_from_timeval_local (&tv);
+	usec = (ft % 10000000u) / 10;
+	sec = (ft / 10000000u) - epoch;
+
+	dt = g_date_time_new_from_unix_utc (sec);
+	ret =g_date_time_add (dt, usec);
+	g_date_time_unref (dt);
+
+	return ret;
 }
 
 
