@@ -54,7 +54,7 @@ AC_PATH_PROG(PKG_CONFIG, pkg-config, no)
 
 dnl Gettext/i18n stuff
 
-IT_PROG_INTLTOOL([0.35.0])
+#IT_PROG_INTLTOOL([0.35.0])
 
 AM_GLIB_GNU_GETTEXT
 

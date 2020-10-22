@@ -7,7 +7,7 @@ if WITH_WIN32
   pkgconfig_DATA += libgsf-win32-1.pc
 endif
 
-SUBDIRS = po gsf gsf-win32 doc tools tests thumbnailer python
+SUBDIRS = gsf gsf-win32 doc tools tests python
 
 EXTRA_DIST = BUGS HACKING	\
 	intltool-extract.in	\

@@ -50,7 +50,7 @@ manpage_DATA = gsf-vba-dump.1 gsf.1 gsf-office-thumbnailer.1
 EXTRA_DIST =
 CLEANFILES =
 if GTK_DOC_INSTALLED
-include $(top_srcdir)/gtk-doc.make
+#include $(top_srcdir)/gtk-doc.make
 CLEANFILES += gsf-scan.*
 .PHONY : dist-hook-local
 EXTRA_DIST += $(manpage_DATA)
