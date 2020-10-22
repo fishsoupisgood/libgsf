@@ -222,7 +222,7 @@ static guint8 const zero_buf [ZERO_PAD_BUF_SIZE];
 static inline guint32
 ole_cur_block (GsfOutfileMSOle const *ole)
 {
-	return (gsf_output_tell (ole->sink) - OLE_HEADER_SIZE) >> ole->bb.shift;
+	return (gsf_output_tell (ole->sink) >> ole->bb.shift) - 1;
 }
 
 static inline unsigned
@@ -299,6 +299,17 @@ ole_pad_bat_unused (GsfOutfileMSOle *ole, unsigned residual)
 		(ole_bytes_left_in_block (ole) / BAT_INDEX_SIZE) - residual);
 }
 
+static guint32 switcheroo(guint32 i, guint32 n)
+{
+	switch (i) {
+		case 0:
+		case DIRENT_MAGIC_END:
+			return i;
+		default:
+			return n - i;
+	}
+}
+
 /* write the metadata (dirents, small block, xbats) and close the sink */
 static gboolean
 gsf_outfile_msole_close_root (GsfOutfileMSOle *ole)
@@ -307,10 +318,12 @@ gsf_outfile_msole_close_root (GsfOutfileMSOle *ole)
 	guint8  buf [OLE_HEADER_SIZE];
 	guint32	sbat_start, num_sbat, sb_data_start, sb_data_size, sb_data_blocks;
 	guint32	bat_start, num_bat, dirent_start, num_dirent_blocks, next, child_index;
+	guint32 obat_start, onum_bat;
 	unsigned i, j, blocks, num_xbat, xbat_pos;
 	gsf_off_t data_size;
 	unsigned metabat_size = ole->bb.size / BAT_INDEX_SIZE - 1;
 	GPtrArray *elem = ole->root->content.dir.root_order;
+	gsf_off_t dirent_start_off;
 
 	/* write small block data */
 	blocks = 0;
@@ -355,6 +368,18 @@ gsf_outfile_msole_close_root (GsfOutfileMSOle *ole)
 
 	/* write dirents */
 	dirent_start = ole_cur_block (ole);
+
+	/*
+	 * JMM - this is miserable - in tune searches dirents looking for the summary file,
+	 * but only checking the leaf. MS requires a specific order of sorting for the singature
+	 * which puts the language leaf summaries ahead in the sorting order. We fix this by
+	 * writing the directory entries out backwards. Walking the RB tree gets you the
+	 * entries in the correct signing order making msiexec and signing properties happy,
+	 * linearly reading the ents gets you the inverse order making intune happy
+	 */
+
+	dirent_start_off = gsf_output_tell (ole->sink);
+
 	for (i = 0 ; i < elem->len ; i++) {
 		GsfOutfileMSOle *child = g_ptr_array_index (elem, i);
 		glong j, name_len = 0;
@@ -423,17 +448,19 @@ gsf_outfile_msole_close_root (GsfOutfileMSOle *ole)
 		}
 		/* make linked list rather than tree, only use next */
 		GSF_LE_SET_GUINT32 (buf + DIRENT_PREV, DIRENT_MAGIC_END);
-		GSF_LE_SET_GUINT32 (buf + DIRENT_NEXT, next);
+		GSF_LE_SET_GUINT32 (buf + DIRENT_NEXT, switcheroo(next, elem->len));
 
 		child_index = DIRENT_MAGIC_END;
 		if (child->type == MSOLE_DIR && child->content.dir.children != NULL) {
 			GsfOutfileMSOle *first = child->content.dir.children->data;
 			child_index = first->child_index;
 		}
-		GSF_LE_SET_GUINT32 (buf + DIRENT_CHILD, child_index);
+		GSF_LE_SET_GUINT32 (buf + DIRENT_CHILD, switcheroo(child_index, elem->len));
 
+		gsf_output_seek (ole->sink, dirent_start_off + (DIRENT_SIZE * switcheroo(i, elem->len)), G_SEEK_SET);
 		gsf_output_write (ole->sink, DIRENT_SIZE, buf);
 	}
+	gsf_output_seek (ole->sink, dirent_start_off + (elem->len * DIRENT_SIZE), G_SEEK_SET);
 	ole_pad_zero (ole);
 	num_dirent_blocks = ole_cur_block (ole) - dirent_start;
 
@@ -450,6 +477,8 @@ gsf_outfile_msole_close_root (GsfOutfileMSOle *ole)
 		ole_write_bat (ole->sink, sbat_start, num_sbat);
 	ole_write_bat (ole->sink, dirent_start, num_dirent_blocks);
 
+	fprintf(stderr, "bat phase 0: bs=%d, cur=%d\n", bat_start, ole_cur_block(ole));
+
 	/* List the BAT and meta-BAT blocks in the BAT.  Doing this may
 	 * increase the size of the bat and hence the metabat, so be
 	 * prepared to iterate.
@@ -457,9 +486,11 @@ gsf_outfile_msole_close_root (GsfOutfileMSOle *ole)
 	num_bat = 0;
 	num_xbat = 0;
 recalc_bat_bat :
-	i = ((ole->sink->cur_size
-	      + BAT_INDEX_SIZE * (num_bat + num_xbat)
-	      - OLE_HEADER_SIZE - 1) >> ole->bb.shift) + 1;
+	fprintf(stderr, "bat phase 1: bs=%d bb=%d xb=%d => tot=%d\n", bat_start, num_bat, num_xbat, bat_start + num_bat + num_xbat);
+
+	i = (ole->sink->cur_size + BAT_INDEX_SIZE * (num_bat + num_xbat) +
+		(ole->bb.size - 1)) >> ole->bb.shift;
+	i--;
 	i -= bat_start;
 	if (num_bat != i) {
 		num_bat = i;
@@ -474,10 +505,19 @@ recalc_bat_bat :
 		goto recalc_bat_bat;
 	}
 
+	fprintf(stderr, "bat phase 2: bs=%d bb=%d xb=%d => tot=%d\n", bat_start, num_bat, num_xbat, bat_start + num_bat + num_xbat);
+
 	ole_write_const (ole->sink, BAT_MAGIC_BAT, num_bat);
 	ole_write_const (ole->sink, BAT_MAGIC_METABAT, num_xbat);
 	ole_pad_bat_unused (ole, 0);
 
+	fprintf(stderr, "bat phase 3: bs=%d bb=%d => tot=%d, cur=%d\n", bat_start, num_bat, bat_start+num_bat, ole_cur_block(ole));
+
+	if ((ole_cur_block(ole)) != (bat_start + num_bat)) {
+		g_error("Bat disaster currently at block %d expected to be at block %d + %d => %d\n", ole_cur_block(ole), bat_start, num_bat, bat_start + num_bat);
+		return FALSE;
+	}
+			
 	if (num_xbat > 0) {
 		xbat_pos = ole_cur_block (ole);
 		blocks = OLE_HEADER_METABAT_SIZE;
@@ -515,6 +555,11 @@ recalc_bat_bat :
 		gsf_output_write (ole->sink, BAT_INDEX_SIZE, buf);
 	}
 
+	gsf_output_seek (ole->sink, 0, G_SEEK_END);
+
+	obat_start = bat_start;
+	onum_bat = num_bat;
+
 	/* write extended Meta-BAT */
 	if (num_xbat > 0) {
 		gsf_output_seek (ole->sink, 0, G_SEEK_END);
@@ -535,6 +580,14 @@ recalc_bat_bat :
 			GSF_LE_SET_GUINT32 (buf, xbat_pos);
 			gsf_output_write (ole->sink, BAT_INDEX_SIZE, buf);
 		}
+	}
+
+	fprintf(stderr, "bat phase 4: bs=%d bb=%d xb=%d => tot=%d, cur=%d\n", obat_start, onum_bat, num_xbat, obat_start + onum_bat + num_xbat, ole_cur_block(ole));
+	fprintf(stderr, "bat phase 5: bs=%d bb=%d xb=%d => tot=%d, cur=%d\n", bat_start, num_bat, num_xbat, bat_start + num_bat + num_xbat, ole_cur_block(ole));
+
+	if ((ole_cur_block(ole)) != (bat_start+num_bat+num_xbat)) {
+		g_error("Bat disaster currently at block %d expected to be at block %d + %d + %d => %d\n", ole_cur_block(ole), bat_start, num_bat, num_xbat, bat_start + num_bat + num_xbat);
+		return FALSE;
 	}
 
 	/* free the children */
